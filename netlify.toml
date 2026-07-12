@@ -1,0 +1,13 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Client-side routing fallback (this app is a single page, but this keeps
+# any deep-link or refresh from 404ing).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

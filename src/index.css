@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: "Open Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Smooth, understated feedback on every interactive element — no visible
+   change unless it's already how the browser renders it, just eased instead
+   of instant, plus a light press/hover response. */
+button, a, input, select, textarea, [role="button"] {
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease,
+    transform 0.1s ease;
+}
+button:not(:disabled):active, [role="button"]:not(:disabled):active {
+  transform: scale(0.97);
+}
+button:disabled {
+  cursor: not-allowed;
+}
+a:hover, button:not(:disabled):hover {
+  filter: brightness(1.03);
+}
+
+/* Replace the browser's default hard outline with a soft, brand-colored ring
+   that only appears for keyboard navigation, not every mouse click. */
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(46, 125, 138, 0.35);
+  border-radius: 4px;
+}
+
+/* Thin, unobtrusive scrollbars (WebKit + Firefox) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #C7CBBE transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: #C7CBBE;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #ADB3A0;
+}
+
+::selection {
+  background: rgba(46, 125, 138, 0.22);
+}
+
+/* Stage content fades/lifts in on every navigation instead of popping in. */
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.stage-enter {
+  animation: fadeSlideIn 0.22s ease both;
+}
+
+/* A small circular spinner for loading states. */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 2.5px solid rgba(30, 42, 47, 0.12);
+  border-top-color: #2E7D8C;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes pulseSoft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.animate-pulse-soft {
+  animation: pulseSoft 1.6s ease-in-out infinite;
+}
+
