@@ -10,16 +10,30 @@ work is shared by project name and saved with an explicit Save button.
 The brand mark is your provided artwork (the rainbow spiral + wordmark), cropped into
 the pieces the app actually needs:
 
-- `public/logo-icon.png` (256×256, also `logo-icon-512.png` at 512×512) — the spiral
-  icon alone, square-cropped. Used for the compact in-app header badge.
-- `public/logo-lockup.png` — the full icon + "Irisona" + tagline lockup, trimmed of
-  extra whitespace. Used on the login screen.
+- `src/assets/logo-icon.png` (256×256) — the spiral icon alone, square-cropped. Used
+  for the compact in-app header badge and the loading screen. Imported directly into
+  `App.jsx` (`import logoIcon from "./assets/logo-icon.png"`), so Vite bundles it at
+  build time — if the file is ever missing, the build fails immediately instead of
+  showing a broken image at runtime.
+- `src/assets/logo-lockup.png` — the full icon + "Irisona" + tagline lockup, trimmed of
+  extra whitespace. Used on the login screen, same import pattern.
 - `public/favicon-32.png`, `favicon-16.png`, `apple-touch-icon.png` — browser tab /
-  home-screen icon sizes, all rendered from the icon crop.
+  home-screen icon sizes, referenced from `index.html`'s `<link>` tags the standard
+  static-file way (these have to live in `public/`, since `index.html` isn't processed
+  by the JS bundler).
+- `public/logo-icon-512.png` — a larger unreferenced copy, kept around for anywhere
+  else you need a bigger raster version (app listings, social previews).
 
-To swap in a different or updated logo: replace these files with your own (same
-filenames), or update the four `src="/logo-*.png"` references — two in `src/App.jsx`
-(login screen and header) and three `<link>` tags in `index.html`.
+To swap in a different or updated logo: replace `src/assets/logo-icon.png` and
+`src/assets/logo-lockup.png` with your own files (same filenames, or update the two
+`import` lines near the top of `src/App.jsx`), and separately replace the three
+favicon files in `public/` if you want the browser tab icon to match too.
+
+**If a logo ever shows as a broken image again:** that almost always means the file
+isn't actually present at the path being referenced — check that `src/assets/` (for
+the two in-app images) or `public/` (for favicons) actually made it into your local
+checkout and deployment, and that filenames match exactly (case-sensitive on Netlify's
+Linux servers, even if your local machine isn't case-sensitive).
 
 ## Visual polish
 
@@ -30,6 +44,44 @@ whenever you switch stages. Corners were softened app-wide (sharp 2px corners �
 and card-style panels got a faint drop shadow for depth. This is a systemic pass rather
 than a screen-by-screen redesign — it should read as noticeably calmer and more
 polished everywhere, but if any specific screen still feels rough, point me at it.
+
+## Combined survey upload
+
+If quantitative and qualitative data arrive in one CSV (a typical form/survey export —
+Likert items and open-ended responses as columns side by side), Setup now has a
+**"Combined survey upload"** section, separate from the two single-purpose uploads
+above it. Upload or paste the CSV, and for each detected column pick a role:
+
+- **Participant ID** — links everything below to one person. Pick one column (a name,
+  email, or ID field); it becomes both the document title and the row identifier in the
+  quantitative dataset, so the two stay linked. If you skip this, rows are labeled
+  "Respondent 1," "Respondent 2," etc.
+- **Quantitative** — numeric items (Likert scales, ratings). These become columns in
+  the quantitative dataset, same as the separate quant CSV upload, feeding the
+  descriptive stats and paired analysis in Matrices.
+- **Qualitative** — open-ended text responses. One new document gets created per
+  participant, combining all of their qualitative columns (each labeled with its
+  original column header) into one codeable document.
+- **Demographic** — categorical context (training level, cohort, prior experience).
+  Attached as attributes on each created document — shown as context while coding, not
+  fed into any specific matrix (see the note below on what attributes actually do).
+- **Ignore** — anything irrelevant (timestamps, consent checkboxes, etc.).
+
+Roles are auto-guessed (all-numeric columns → quantitative, low-variety short text →
+demographic, header names containing "id"/"name"/"email" → participant ID, everything
+else → qualitative) but every guess is a dropdown you can override. Running it creates
+new documents and **replaces** the quantitative dataset — your existing individually-
+uploaded documents and the standalone quant CSV upload are unaffected either way, and
+running it twice will create duplicate documents rather than merge, so delete the old
+ones first if you're re-importing a corrected file.
+
+**What document attributes are (and aren't) for:** attributes are free-form key/value
+tags on a document — "Training level: Novice," "Cohort: A" — shown as context next to
+that document while you're reading and coding it. They don't feed any matrix or
+statistic; that used to be true in an earlier version of this app but isn't anymore.
+The actual quantitative dataset that drives descriptive stats, Wilcoxon tests, and the
+paired analysis comes only from an uploaded CSV — either the standalone one or the
+combined one above.
 
 ## 1. Firebase project setup (free "Spark" plan is enough)
 
@@ -146,6 +198,17 @@ most common causes are:
 - The Firebase project is on a quota/billing hold, or the six `VITE_FIREBASE_*` values
   don't match this Firebase project (a stale `.env` after switching projects is a
   frequent culprit).
+- **A Content-Security-Policy blocking `eval`.** Firestore's SDK relies on a dependency
+  (protobuf message encoding) that uses `new Function()` internally, which any CSP
+  without `unsafe-eval` in `script-src` will block — this shows up in Chrome's DevTools
+  **Issues** tab (not the Console tab) as "The Content Security Policy (CSP) prevents
+  the evaluation of arbitrary strings." `public/_headers` sets an explicit CSP that
+  allows this, plus Firebase's domains, Google Fonts, and the app's own bundled assets.
+  If you already have a CSP configured elsewhere (Netlify dashboard → Site
+  configuration → Headers, or your own `netlify.toml` edits), that one may be taking
+  precedence instead — check there first, and merge in the `script-src 'unsafe-eval'`
+  and `connect-src` values from `public/_headers` rather than running two conflicting
+  policies.
 
 ## Typography
 
