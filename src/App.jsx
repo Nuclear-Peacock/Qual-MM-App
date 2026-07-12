@@ -47,12 +47,12 @@ import {
 // person is signed in — that only exposes the list of approved emails, nothing else. Write
 // access stays locked to the console, so nobody can add themselves to the list from the app.
 const firebaseConfig = {
-  apiKey: "AIzaSyDaylmz-UI5UgT2JLq7miipPaDct-31-b8",
-  authDomain: "qual-mm-app.firebaseapp.com",
-  projectId: "qual-mm-app",
-  storageBucket: "qual-mm-app.firebasestorage.app",
-  messagingSenderId: "71663333597",
-  appId: "1:71663333597:web:341653da045302780f2b34"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
@@ -188,10 +188,10 @@ const SAMPLE = (() => {
         text: "Facilitator: What stood out to you all about that scenario? Voice 1: Honestly I just wanted the video part to be over. Voice 2: Same, but once we started talking about why we made the call it felt less like a trial. Voice 1: Yeah, the questions helped more than the replay did." },
     ],
     codes: [
-      { id: cEmot, name: "emotional exposure", color: PALETTE[0], categoryId: catClimate, memo: "Feeling watched/judged during video review.", origin: "inductive", theoryId: null },
-      { id: cQuest, name: "facilitator questioning technique", color: PALETTE[1], categoryId: catFacil, memo: "Why-questions vs. what-questions.", origin: "deductive", theoryId: lt1 },
-      { id: cPeer, name: "peer perspective value", color: PALETTE[2], categoryId: catClimate, memo: "Value once psychologically safe.", origin: "inductive", theoryId: null },
-      { id: cCheckin, name: "need for individualized check-in", color: PALETTE[3], categoryId: catFacil, memo: "", origin: "inductive", theoryId: null },
+      { id: cEmot, name: "emotional exposure", color: PALETTE[0], categoryId: catClimate, memo: "Feeling watched/judged during video review.", origin: "inductive", theoryId: null, createdBy: "Sample Team" },
+      { id: cQuest, name: "facilitator questioning technique", color: PALETTE[1], categoryId: catFacil, memo: "Why-questions vs. what-questions.", origin: "deductive", theoryId: lt1, createdBy: "Group" },
+      { id: cPeer, name: "peer perspective value", color: PALETTE[2], categoryId: catClimate, memo: "Value once psychologically safe.", origin: "inductive", theoryId: null, createdBy: "Sample Team" },
+      { id: cCheckin, name: "need for individualized check-in", color: PALETTE[3], categoryId: catFacil, memo: "", origin: "inductive", theoryId: null, createdBy: "Sample Team" },
     ],
     categories: [
       { id: catClimate, name: "Debrief climate", memo: "" },
@@ -757,12 +757,15 @@ export default function App() {
   useEffect(() => {
     if (!me || me.role !== "individual" || !loaded) return;
     if (project.individualUnlocked?.[me.name]) return;
-    const completed = project.documents.length > 0 && project.documents.every((doc) =>
-      project.codings.some((k) => k.researcherName === me.name && k.docId === doc.id && k.draftId));
-    if (completed) {
+    const everyDocCodedAndMemoed = project.documents.length > 0 && project.documents.every((doc) => {
+      const hasSavedCoding = project.codings.some((k) => k.researcherName === me.name && k.docId === doc.id && k.draftId);
+      const hasMemo = project.memos.some((m) => m.researcherName === me.name && m.docId === doc.id);
+      return hasSavedCoding && hasMemo;
+    });
+    if (everyDocCodedAndMemoed) {
       setProject((p) => ({ ...p, individualUnlocked: { ...(p.individualUnlocked || {}), [me.name]: true } }));
     }
-  }, [project.codings, project.documents, project.individualUnlocked, me, loaded]);
+  }, [project.codings, project.documents, project.memos, project.individualUnlocked, me, loaded]);
 
   // Email + Project Name login. First the email is checked against the
   // allowed_users whitelist; only then do we attempt Firebase Auth, where the
@@ -830,6 +833,26 @@ export default function App() {
   }), [docCodings, viewFilter, me]);
   const segments = useMemo(() => (activeDoc ? buildSegments(activeDoc.text, visibleCodings) : []), [activeDoc, visibleCodings]);
   const codeById = (id) => project.codes.find((c) => c.id === id);
+  const codesForCoding = useMemo(() => {
+    if (me?.role === "group") return project.codes;
+    return project.codes.filter((c) => c.origin !== "inductive" || c.createdBy === me?.name);
+  }, [project.codes, me]);
+  const unlockProgress = useMemo(() => {
+    if (!me || me.role !== "individual") return null;
+    const total = project.documents.length;
+    let done = 0;
+    const missing = [];
+    project.documents.forEach((doc) => {
+      const hasSavedCoding = project.codings.some((k) => k.researcherName === me.name && k.docId === doc.id && k.draftId);
+      const hasMemo = project.memos.some((m) => m.researcherName === me.name && m.docId === doc.id);
+      if (hasSavedCoding && hasMemo) { done++; return; }
+      const need = [];
+      if (!hasSavedCoding) need.push("a saved code");
+      if (!hasMemo) need.push("a memo");
+      missing.push(`${doc.title} (needs ${need.join(" + ")})`);
+    });
+    return { done, total, missing };
+  }, [project.documents, project.codings, project.memos, me]);
 
   function handleMouseUp() {
     const sel = window.getSelection();
@@ -857,7 +880,7 @@ export default function App() {
   function createCodeAndAssign(name, speaker) {
     if (!name.trim()) return;
     const color = PALETTE[project.codes.length % PALETTE.length];
-    const code = { id: uid(), name: name.trim(), color, categoryId: null, memo: "", origin: "inductive", theoryId: null };
+    const code = { id: uid(), name: name.trim(), color, categoryId: null, memo: "", origin: "inductive", theoryId: null, createdBy: me.name };
     setProject((p) => ({ ...p, codes: [...p.codes, code] }));
     if (selection) {
       const coding = { id: uid(), docId: selection.docId, codeId: code.id, start: selection.start, end: selection.end, text: selection.text, researcherName: me.name, scope: codingScope, draftId: null, speaker: speaker || null };
@@ -942,8 +965,16 @@ export default function App() {
         onImportClick={() => fileInputRef.current?.click()} fileInputRef={fileInputRef} importJSON={importJSON} />
       <StageNav stages={STAGES} current={stage} onSelect={setStage} />
       {!isGroupRole && !myUnlocked && (
-        <div className="px-5 py-2 text-base font-mono" style={{ background: "#F4EBD8", color: "#7A5B1E", borderBottom: `1px solid ${COLORS.gold}55` }}>
-          Individual view: code and memo every document, then save a draft covering all of them to unlock a read-only view of the rest of the project.
+        <div className="px-5 py-2 text-base font-mono space-y-1" style={{ background: "#F4EBD8", color: "#7A5B1E", borderBottom: `1px solid ${COLORS.gold}55` }}>
+          <div>
+            Individual view: any predetermined (deductive) codes are selectable while you code, and your own codes go straight into the shared master codebook — but the Master Codebook itself, and everything past it, stays locked until every document has at least one saved code and one memo from you.
+          </div>
+          {unlockProgress && unlockProgress.total > 0 && (
+            <div>
+              Progress: {unlockProgress.done} of {unlockProgress.total} documents fully coded (saved) and memoed.
+              {unlockProgress.missing.length > 0 && <> Still needed — {unlockProgress.missing.join("; ")}.</>}
+            </div>
+          )}
         </div>
       )}
 
@@ -991,7 +1022,7 @@ export default function App() {
                   <EmptyState onNew={() => setStage("setup")} />
                 )}
               </main>
-              <Inspector selection={selection} onCancel={clearSelection} codes={project.codes} onAssign={assignCode} onCreate={createCodeAndAssign}
+              <Inspector selection={selection} onCancel={clearSelection} codes={codesForCoding} onAssign={assignCode} onCreate={createCodeAndAssign}
                 inspect={inspect} inspectCodings={inspect ? project.codings.filter((c) => inspect.includes(c.id)) : []} codeById={codeById}
                 onRemoveCoding={removeCoding} filterCodeId={filterCodeId} setFilterCodeId={setFilterCodeId} project={project}
                 isGroupDoc={activeDoc?.documentType === "group"} />
@@ -1000,7 +1031,7 @@ export default function App() {
         )}
 
         {stage === "memos" && <MemosStage project={project} setProject={setProject} me={me} />}
-        {stage === "masterCodebook" && <MasterCodebookStage project={project} setProject={setProject} onMarkFinal={markFinalMasterCodebook} readOnly={readOnly} />}
+        {stage === "masterCodebook" && <MasterCodebookStage project={project} setProject={setProject} onMarkFinal={markFinalMasterCodebook} readOnly={readOnly} me={me} />}
         {stage === "categories" && <CategoriesStage project={project} setProject={setProject} onFinalize={finalizeCategories} readOnly={readOnly} />}
         {stage === "themes" && <ThemesStage project={project} setProject={setProject} readOnly={readOnly} />}
         {stage === "negativeCases" && <NegativeCasesStage project={project} setProject={setProject} me={me} readOnly={readOnly} />}
@@ -1075,7 +1106,7 @@ function Header({ project, setProject, status, me, onSwitch, onSetRole, onSave, 
         <input type="file" accept=".json" ref={fileInputRef} onChange={importJSON} className="hidden" />
         <button onClick={onNewProject} className="hover:underline">new project</button>
         <span className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-white" style={{ background: me.color }}><Users size={14} /> {me.name}</span>
-        <div className="flex rounded-lg overflow-hidden" style={{ border: `1px solid ${COLORS.border}` }} title="Individual: your own coding + memos, read-only elsewhere until you've coded every document. Group: full edit access.">
+        <div className="flex rounded-lg overflow-hidden" style={{ border: `1px solid ${COLORS.border}` }} title="Individual: your own coding + memos, plus any predetermined codes to select from; read-only elsewhere until every document has a saved code and a memo from you. Group: full edit access.">
           {["individual", "group"].map((r) => (
             <button key={r} onClick={() => onSetRole(r)} className="px-2 py-1"
               style={me.role === r ? { background: COLORS.accent, color: "#fff" } : { color: COLORS.inkMuted }}>{r}</button>
@@ -1849,12 +1880,26 @@ function MemosStage({ project, setProject, me }) {
 }
 
 // ---------- master codebook ----------
-function MasterCodebookStage({ project, setProject, onMarkFinal, readOnly }) {
+function MasterCodebookStage({ project, setProject, onMarkFinal, readOnly, me }) {
   const drafts = [...project.drafts].sort((a, b) => b.createdAt - a.createdAt);
   const [expanded, setExpanded] = useState(null);
+  const [newCodeName, setNewCodeName] = useState("");
+  const [newCodeOrigin, setNewCodeOrigin] = useState("deductive");
+  const [newCodeTheoryId, setNewCodeTheoryId] = useState("");
+  const [newCodeMemo, setNewCodeMemo] = useState("");
   function countFor(draft) { return project.codings.filter((k) => k.draftId === draft.id).length; }
   function updateCode(codeId, patch) { setProject((p) => ({ ...p, codes: p.codes.map((c) => (c.id === codeId ? { ...c, ...patch } : c)) })); }
   function deleteCode(codeId) { setProject((p) => ({ ...p, codes: p.codes.filter((c) => c.id !== codeId), codings: p.codings.filter((k) => k.codeId !== codeId) })); }
+  function addPredeterminedCode() {
+    if (readOnly || !newCodeName.trim()) return;
+    const color = PALETTE[project.codes.length % PALETTE.length];
+    const code = {
+      id: uid(), name: newCodeName.trim(), color, categoryId: null, memo: newCodeMemo.trim(),
+      origin: newCodeOrigin, theoryId: newCodeOrigin === "deductive" ? (newCodeTheoryId || null) : null, createdBy: me?.name || "Group",
+    };
+    setProject((p) => ({ ...p, codes: [...p.codes, code] }));
+    setNewCodeName(""); setNewCodeMemo(""); setNewCodeTheoryId("");
+  }
   function dataSourcesFor(codeId) {
     const docIds = new Set(project.codings.filter((k) => k.codeId === codeId).map((k) => k.docId));
     const types = new Set();
@@ -1893,6 +1938,31 @@ function MasterCodebookStage({ project, setProject, onMarkFinal, readOnly }) {
           {drafts.length === 0 && <p className="text-base" style={{ color: COLORS.inkMuted }}>No drafts saved yet — go to Code and save your first draft.</p>}
         </div>
       </section>
+      {!readOnly && (
+        <section className="space-y-2 rounded-lg p-3" style={{ background: "#EAF1EF", border: `1px solid ${COLORS.border}` }}>
+          <h3 className="text-lg font-mono uppercase tracking-wide" style={{ color: COLORS.inkMuted }}>Add a predetermined code</h3>
+          <p className="text-base" style={{ color: COLORS.inkMuted }}>
+            For seeding the codebook with deductive codes from your research questions or learning theory before anyone starts coding — no excerpt needed. Individual coders can still add their own inductive codes as they go, straight from the Code stage.
+          </p>
+          <input value={newCodeName} onChange={(e) => setNewCodeName(e.target.value)} placeholder="Code name" className="w-full text-lg border rounded-lg px-2 py-1" style={{ borderColor: COLORS.border }} />
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-base font-mono" style={{ color: COLORS.inkMuted }}>Origin:</span>
+            {["deductive", "inductive"].map((o) => (
+              <button key={o} onClick={() => setNewCodeOrigin(o)} className="text-base font-mono px-2 py-0.5 rounded-lg"
+                style={newCodeOrigin === o ? { background: COLORS.accent, color: "#fff" } : { border: `1px solid ${COLORS.border}`, color: COLORS.inkMuted }}>{o}</button>
+            ))}
+            {newCodeOrigin === "deductive" && (
+              <select value={newCodeTheoryId} onChange={(e) => setNewCodeTheoryId(e.target.value)} className="text-base font-mono border rounded-lg px-1.5 py-0.5" style={{ borderColor: COLORS.border }}>
+                <option value="">Which theory?</option>
+                {project.learningTheories.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            )}
+          </div>
+          <textarea value={newCodeMemo} onChange={(e) => setNewCodeMemo(e.target.value)} rows={2} placeholder="Definition / inclusion criteria (optional)"
+            className="w-full text-lg border rounded-lg px-2 py-1 font-serif" style={{ borderColor: COLORS.border }} />
+          <button onClick={addPredeterminedCode} disabled={!newCodeName.trim()} className="text-base font-mono px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: COLORS.accent }}>+ add code</button>
+        </section>
+      )}
       <section className="space-y-2">
         <h3 className="text-lg font-mono uppercase tracking-wide" style={{ color: COLORS.inkMuted }}>Codes &amp; examples</h3>
         <div className="space-y-1.5">
@@ -1905,6 +1975,7 @@ function MasterCodebookStage({ project, setProject, onMarkFinal, readOnly }) {
                 <div className="flex items-center gap-2 px-3 py-2 flex-wrap">
                   <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: c.color }} />
                   <input disabled={readOnly} value={c.name} onChange={(e) => updateCode(c.id, { name: e.target.value })} className="text-lg flex-1 bg-transparent outline-none disabled:opacity-80" />
+                  {c.origin === "deductive" && <span className="text-base font-mono px-1.5 py-0.5 rounded-lg" style={{ border: `1px solid ${COLORS.border}`, color: COLORS.inkMuted }}>deductive{c.theoryId ? ` · ${project.learningTheories.find((t) => t.id === c.theoryId)?.name || ""}` : ""}</span>}
                   <span className="text-base font-mono" style={{ color: COLORS.inkMuted }}>{count}</span>
                   <button onClick={() => setExpanded(open ? null : c.id)} style={{ color: COLORS.inkMuted }}>{open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
                   {!readOnly && <button onClick={() => deleteCode(c.id)} style={{ color: COLORS.inkMuted }}><Trash2 size={13} /></button>}
