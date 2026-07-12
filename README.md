@@ -45,6 +45,47 @@ and card-style panels got a faint drop shadow for depth. This is a systemic pass
 than a screen-by-screen redesign — it should read as noticeably calmer and more
 polished everywhere, but if any specific screen still feels rough, point me at it.
 
+## Codebook: deductive seeding, inductive additions, and who sees what
+
+Two coding pathways feed the same shared codebook:
+
+- **Individual coders add inductive codes as they go** — while coding in the Code
+  stage, anyone (Individual or Group role) can create a new code on the fly by
+  selecting text and clicking "+ create." This is unrestricted by design; it's how
+  open/inductive coding is supposed to work, and every new code goes into the shared
+  master codebook immediately, regardless of who created it.
+- **The Group role can pre-seed deductive codes before anyone starts coding** — Master
+  Codebook has an "Add a predetermined code" panel (Group role only) that creates a
+  code with no excerpt attached, for codes you already know you want going in — derived
+  from your research questions or learning theory, not yet observed in the data.
+
+Every code carries an **Origin** (deductive/inductive) and, if deductive, which
+**learning theory** it comes from — editable any time from Master Codebook, which also
+shows that theory right in each code's collapsed row.
+
+**Who can select which codes while coding** is asymmetric by design:
+- **Deductive codes are selectable by everyone**, always — the whole point of
+  pre-seeding them is that coders should be looking for them from the start.
+- **Inductive codes are only selectable by the researcher who created them.** If
+  Researcher A invents an inductive code, Researcher B won't see it in their own code
+  picker — it's still saved to the shared master codebook and will surface once
+  Master Codebook unlocks for them, but it doesn't appear as a selectable option while
+  they're independently coding. This keeps independent coding genuinely independent —
+  nobody's inductive vocabulary leaks into anyone else's initial pass.
+- **The Group role sees and can select every code**, deductive or inductive, from
+  anyone — no filtering applies to Group.
+
+**Master Codebook itself stays locked to Individual coders** until **every single
+document** has at least one saved code *and* at least one memo from them — not just
+"coded everything overall, plus one memo anywhere." A memo only counts toward a given
+document if it's linked to that document specifically (the dropdown in Memos — "General
+/ project-level" memos don't count toward any document's requirement). The individual
+banner at the top of the app shows live progress and names exactly which documents
+still need a code, a memo, or both. Once every document clears both, Master Codebook
+and everything past it becomes visible, read-only. Until then, they still have full
+access to whatever deductive codes exist, just through the Code stage's picker, not
+through browsing the codebook itself.
+
 ## Combined survey upload
 
 If quantitative and qualitative data arrive in one CSV (a typical form/survey export —
