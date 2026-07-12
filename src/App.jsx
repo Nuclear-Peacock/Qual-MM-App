@@ -655,18 +655,36 @@ export default function App() {
   const fileInputRef = useRef(null);
 
   // Restore a persisted Firebase session on load, and pull the researcher's
-  // profile (project name, display name, role) back from Firestore.
+  // profile (project name, display name, role) back from Firestore. The
+  // profile is normalized on the way in — if it was saved by an older
+  // version of this app (missing uid/projectDocId, or an old field name),
+  // this fills the gaps and writes the corrected shape back, rather than
+  // silently carrying forward a broken profile.
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) { setMe(null); setCheckingMe(false); return; }
       try {
         const snap = await getDoc(doc(db, "users", user.uid));
         if (snap.exists()) {
-          setMe(snap.data());
+          const data = snap.data();
+          const cleanName = data.name || (user.email || "").split("@")[0] || "Researcher";
+          const normalized = {
+            uid: user.uid,
+            email: data.email || user.email || "",
+            projectName: data.projectName || "",
+            projectDocId: data.projectDocId || safeDocId(data.projectName || data.projectSlug || ""),
+            name: cleanName,
+            role: data.role === "group" ? "group" : "individual",
+            color: data.color || hashColor(cleanName),
+          };
+          setMe(normalized);
+          const changed = Object.keys(normalized).some((k) => normalized[k] !== data[k]);
+          if (changed) setDoc(doc(db, "users", user.uid), normalized, { merge: true }).catch(() => {});
         } else {
           setJoinDraft((d) => ({ ...d, email: user.email || "" }));
         }
       } catch (e) {
+        console.error("Irisona: profile restore failed", e);
         setJoinDraft((d) => ({ ...d, email: user.email || "" }));
       }
       setCheckingMe(false);
@@ -679,6 +697,11 @@ export default function App() {
   // ever written back when the researcher presses Save.
   async function loadProject() {
     if (!me) return;
+    if (!me.projectDocId) {
+      setStatus("Missing project reference — sign out and sign in again");
+      setLoaded(true);
+      return;
+    }
     setLoaded(false);
     try {
       const snap = await getDoc(doc(db, "projects", me.projectDocId));
@@ -686,7 +709,8 @@ export default function App() {
       setDirty(false);
       setStatus("Loaded");
     } catch (e) {
-      setStatus("Load failed — check your connection and try Reload");
+      setStatus("Load failed — see console");
+      console.error("Irisona: load failed", e);
     } finally {
       setLoaded(true);
     }
@@ -702,6 +726,10 @@ export default function App() {
 
   async function saveProject() {
     if (!me) return;
+    if (!me.projectDocId) {
+      setStatus("Missing project reference — sign out and sign in again");
+      return;
+    }
     setSaving(true);
     setStatus("Saving…");
     try {
@@ -1226,9 +1254,177 @@ function SetupStage({ project, setProject, me, showNewDoc, setShowNewDoc, onAddD
         {showNewDoc && !readOnly && <NewDocForm onCancel={() => setShowNewDoc(false)} onAdd={onAddDoc} me={me} />}
       </section>
 
+      <CombinedUploadSection project={project} setProject={setProject} me={me} readOnly={readOnly} />
+
       {project.studyType === "mixed" && <QuantDataSection project={project} setProject={setProject} readOnly={readOnly} />}
       {project.quantData?.columns?.length > 0 && <DataDictionarySection project={project} setProject={setProject} readOnly={readOnly} />}
     </div>
+  );
+}
+
+const COMBINED_ROLE_OPTIONS = [
+  { value: "id", label: "Participant ID" },
+  { value: "quant", label: "Quantitative" },
+  { value: "qual", label: "Qualitative" },
+  { value: "demo", label: "Demographic" },
+  { value: "ignore", label: "Ignore" },
+];
+function guessColumnRole(colName, values) {
+  const nameLower = (colName || "").toLowerCase();
+  if (/\b(id|participant|name|email|respondent)\b/.test(nameLower)) return "id";
+  const nonEmpty = values.filter((v) => v !== undefined && v !== null && String(v).trim() !== "");
+  if (nonEmpty.length === 0) return "ignore";
+  const allNumeric = nonEmpty.every((v) => String(v).trim() !== "" && !isNaN(Number(String(v).trim())));
+  if (allNumeric) return "quant";
+  const uniqueVals = new Set(nonEmpty.map((v) => String(v).trim().toLowerCase()));
+  const avgLen = nonEmpty.reduce((s, v) => s + String(v).trim().length, 0) / nonEmpty.length;
+  if (uniqueVals.size <= Math.max(6, nonEmpty.length * 0.3) && avgLen < 30) return "demo";
+  return "qual";
+}
+
+function CombinedUploadSection({ project, setProject, me, readOnly }) {
+  const [pasteText, setPasteText] = useState("");
+  const [parseError, setParseError] = useState("");
+  const [columns, setColumns] = useState([]);
+  const [rows, setRows] = useState([]);
+  const [roles, setRoles] = useState({});
+  const [docType, setDocType] = useState("individual");
+  const [resultMsg, setResultMsg] = useState("");
+
+  function applyParsed(result) {
+    if (result.errors && result.errors.length) { setParseError(result.errors[0].message); return; }
+    const cols = result.meta.fields || [];
+    if (cols.length === 0) { setParseError("Couldn't find any columns — check the file has a header row."); return; }
+    setParseError("");
+    setColumns(cols);
+    setRows(result.data);
+    const guessed = {};
+    cols.forEach((c) => { guessed[c] = guessColumnRole(c, result.data.map((r) => r[c])); });
+    setRoles(guessed);
+    setResultMsg("");
+  }
+  function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    Papa.parse(file, { header: true, skipEmptyLines: true, complete: applyParsed });
+    e.target.value = "";
+  }
+  function parsePasted() {
+    if (!pasteText.trim()) return;
+    Papa.parse(pasteText.trim(), { header: true, skipEmptyLines: true, complete: applyParsed });
+  }
+  function setRole(col, role) { setRoles((r) => ({ ...r, [col]: role })); }
+
+  const idCol = columns.find((c) => roles[c] === "id") || null;
+  const quantCols = columns.filter((c) => roles[c] === "quant");
+  const qualCols = columns.filter((c) => roles[c] === "qual");
+  const demoCols = columns.filter((c) => roles[c] === "demo");
+
+  function process() {
+    if (readOnly || rows.length === 0) return;
+    let addedDocs = 0;
+    setProject((p) => {
+      let next = p;
+      if (quantCols.length > 0) {
+        const qCols = [idCol || "Participant", ...quantCols];
+        const qRows = rows.map((r, i) => {
+          const row = {};
+          row[idCol || "Participant"] = idCol ? (r[idCol] || `Respondent ${i + 1}`) : `Respondent ${i + 1}`;
+          quantCols.forEach((c) => { row[c] = r[c]; });
+          return row;
+        });
+        next = { ...next, quantData: { ...next.quantData, columns: qCols, rows: qRows } };
+      }
+      if (qualCols.length > 0) {
+        const newDocs = rows.map((r, i) => {
+          const pid = idCol ? (r[idCol] || `Respondent ${i + 1}`) : `Respondent ${i + 1}`;
+          const parts = qualCols
+            .map((c) => ({ label: c, value: (r[c] || "").toString().trim() }))
+            .filter((part) => part.value !== "")
+            .map((part) => `${part.label}\n${part.value}`);
+          const attributes = {};
+          demoCols.forEach((c) => { if (r[c] !== undefined && String(r[c]).trim() !== "") attributes[c] = String(r[c]).trim(); });
+          return { id: uid(), title: String(pid), text: parts.join("\n\n"), documentType: docType, attributes, addedBy: me?.name || "Researcher" };
+        }).filter((d) => d.text.trim().length > 0);
+        addedDocs = newDocs.length;
+        next = { ...next, documents: [...next.documents, ...newDocs] };
+      }
+      return next;
+    });
+    setResultMsg(`Created ${addedDocs} document${addedDocs === 1 ? "" : "s"}${quantCols.length ? ` and set ${rows.length} row${rows.length === 1 ? "" : "s"} of quantitative data.` : "."}`);
+  }
+
+  return (
+    <section className="space-y-2">
+      <h3 className="text-lg font-mono uppercase tracking-wide" style={{ color: COLORS.inkMuted }}>Combined survey upload (quant + qual in one CSV)</h3>
+      <p className="text-base" style={{ color: COLORS.inkMuted }}>
+        If your form export has quantitative ratings and open-ended responses side by side in one file, upload it here instead of splitting it by hand. Mark which column identifies each participant, which are quantitative, which are open-ended qualitative responses, and which are demographic — this creates one document per participant (their combined qualitative answers, with demographic attributes attached for context) and sets the quantitative dataset, in one step. Your existing document uploads and the separate quantitative CSV upload below are unaffected and still work independently of this.
+      </p>
+      {!readOnly && (
+        <>
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="flex items-center gap-1.5 text-base font-mono px-2 py-1.5 rounded-lg cursor-pointer w-fit" style={{ border: `1px dashed ${COLORS.border}`, color: COLORS.accent }}>
+              <Upload size={13} /> upload .csv
+              <input type="file" accept=".csv" onChange={handleFile} className="hidden" />
+            </label>
+          </div>
+          <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} rows={3} placeholder="…or paste CSV text here"
+            className="w-full text-lg border rounded-lg px-2 py-1.5 font-mono" style={{ borderColor: COLORS.border }} />
+          <button onClick={parsePasted} className="text-base font-mono px-3 py-1.5 rounded-lg text-white" style={{ background: COLORS.accent }}>Parse pasted data</button>
+          {parseError && <p className="text-base" style={{ color: "#B24A73" }}>{parseError}</p>}
+        </>
+      )}
+
+      {columns.length > 0 && (
+        <div className="space-y-3 pt-2">
+          <div className="overflow-x-auto">
+            <table className="text-base font-mono border-collapse w-full">
+              <thead><tr>
+                <th className="p-2 border text-left" style={{ borderColor: COLORS.border }}>Column</th>
+                <th className="p-2 border text-left" style={{ borderColor: COLORS.border }}>Role</th>
+              </tr></thead>
+              <tbody>
+                {columns.map((c) => (
+                  <tr key={c}>
+                    <td className="p-2 border" style={{ borderColor: COLORS.border }}>{c}</td>
+                    <td className="p-2 border" style={{ borderColor: COLORS.border }}>
+                      <select disabled={readOnly} value={roles[c] || "ignore"} onChange={(e) => setRole(c, e.target.value)} className="text-base font-mono border rounded-lg px-1.5 py-0.5 disabled:opacity-60" style={{ borderColor: COLORS.border }}>
+                        {COMBINED_ROLE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-base" style={{ color: COLORS.inkMuted }}>
+            {rows.length} row{rows.length === 1 ? "" : "s"} · {idCol ? `Participant ID: ${idCol}` : "No Participant ID column selected — rows will be labeled Respondent 1, 2, 3…"} ·{" "}
+            {quantCols.length} quantitative · {qualCols.length} qualitative · {demoCols.length} demographic
+          </p>
+          {!readOnly && (
+            <>
+              <div className="flex items-center gap-2">
+                <span className="text-base font-mono" style={{ color: COLORS.inkMuted }}>New documents will be:</span>
+                {["individual", "group"].map((t) => (
+                  <button key={t} onClick={() => setDocType(t)} className="text-base font-mono px-2 py-1 rounded-lg"
+                    style={docType === t ? { background: COLORS.accent, color: "#fff" } : { border: `1px solid ${COLORS.border}`, color: COLORS.inkMuted }}>{t === "individual" ? "Individual" : "Group discussion"}</button>
+                ))}
+              </div>
+              {project.quantData?.rows?.length > 0 && quantCols.length > 0 && (
+                <p className="text-base rounded-lg p-2" style={{ background: "#F4EBD8", color: "#7A5B1E" }}>
+                  This will replace your existing quantitative dataset ({project.quantData.rows.length} rows currently). Your documents and everything else are unaffected.
+                </p>
+              )}
+              <button onClick={process} className="text-base font-mono px-3 py-1.5 rounded-lg text-white" style={{ background: COLORS.accent }}>
+                Create documents &amp; quantitative dataset
+              </button>
+              {resultMsg && <p className="text-base" style={{ color: COLORS.accent }}>{resultMsg}</p>}
+              <p className="text-base" style={{ color: COLORS.inkMuted }}>Running this again will add new documents on top of any already created — delete duplicates in the Documents list above if you're re-importing a corrected file.</p>
+            </>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1434,7 +1630,7 @@ function NewDocForm({ onCancel, onAdd, me }) {
       <textarea placeholder="…or paste transcript or field notes here" value={text} onChange={(e) => setText(e.target.value)} rows={6}
         className="w-full text-lg border rounded-lg px-2 py-1 font-serif" style={{ borderColor: COLORS.border }} />
       <div className="space-y-1">
-        <span className="text-base font-mono" style={{ color: COLORS.inkMuted }}>Attributes (for the quantitative matrix)</span>
+        <span className="text-base font-mono" style={{ color: COLORS.inkMuted }}>Attributes (demographic context, shown next to this document)</span>
         {attrs.map((a, i) => (
           <div key={i} className="flex gap-1">
             <input placeholder="key" value={a.key} onChange={(e) => setAttrs((arr) => arr.map((x, j) => j === i ? { ...x, key: e.target.value } : x))}
