@@ -45,12 +45,12 @@ import {
 // person is signed in — that only exposes the list of approved emails, nothing else. Write
 // access stays locked to the console, so nobody can add themselves to the list from the app.
 const firebaseConfig = {
-  apiKey: AIzaSyDaylmz-UI5UgT2JLq7miipPaDct-31-b8,
-  authDomain: qual-mm-app.firebaseapp.com,
-  projectId: qual-mm-app,
-  storageBucket: qual-mm-app.firebasestorage.app,
-  messagingSenderId: 71663333597,
-  appId: 1:71663333597:web:341653da045302780f2b34,
+  apiKey: "AIzaSyDaylmz-UI5UgT2JLq7miipPaDct-31-b8",
+  authDomain: "qual-mm-app.firebaseapp.com",
+  projectId: "qual-mm-app",
+  storageBucket: "qual-mm-app.firebasestorage.app",
+  messagingSenderId: "71663333597",
+  appId: "1:71663333597:web:341653da045302780f2b34",
 };
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
