@@ -47,12 +47,12 @@ import {
 // person is signed in — that only exposes the list of approved emails, nothing else. Write
 // access stays locked to the console, so nobody can add themselves to the list from the app.
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: "AIzaSyDaylmz-UI5UgT2JLq7miipPaDct-31-b8",
+  authDomain: "qual-mm-app.firebaseapp.com",
+  projectId: "qual-mm-app",
+  storageBucket: "qual-mm-app.firebasestorage.app",
+  messagingSenderId: "71663333597",
+  appId: "1:71663333597:web:341653da045302780f2b34"
 };
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
